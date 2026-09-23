@@ -20,7 +20,7 @@ def generateShip(dimension):
     #If the dimension is less than 3 x 3, no "interior cells" exist, so we cannot generate a ship.
     if(dimension < 3):
         raise ValueError("Dimension must be at least 3.")
-    
+
 
     # Start with every cell blocked.
     # False = blocked
@@ -34,34 +34,57 @@ def generateShip(dimension):
     ship[row][col] = True
 
     # Grow the ship.
-    while True:
-        candidates = []
-        # Find every blocked cell
-        for row in range(dimension):
-            for col in range(dimension):
-                if ship[row][col] == False:
-                    #Checks if its exactly 1 neighbour
-                    if countOpenNeighbors(ship, row, col) == 1:
-                        candidates.append((row, col))
+    # OG code scanned every cell in the entire ship after each
+    # new cell was opened to rebuild the candidates list.
+    # new implementation just updates the neighbours
 
-        # If there are no candidates, ship growth is finished.
-        if len(candidates) == 0:
-            break
+    # The candidates set contains all blocked cells with exactly one open neighbor.
+    candidates = set()
+
+    # The four neighbors of the first open cell are the only possible
+    # candidates at the beginning.
+    for neighborRow, neighborCol in getNeighbors(ship, row, col):
+        if ship[neighborRow][neighborCol] == False:
+            if countOpenNeighbors(ship, neighborRow, neighborCol) == 1:
+                candidates.add((neighborRow, neighborCol))
+
+    # Keep opening candidates until there are no more.
+    while len(candidates) > 0:
 
         # Randomly choose one candidate and open it.
-        row, col = random.choice(candidates)
+        # OG code was a list using random.choice()
+        # A set lets us quickly add and remove affected candidates. 
+        # but random.choice() doesn't work on sets, so we convert to a tuple first.
+        row, col = random.choice(tuple(candidates))
+        candidates.remove((row, col))
         ship[row][col] = True
 
-    # Find all dead ends.
-    deadEnds = []
+        # Only neighboring blocked cells can have had their number of open
+        # neighbors changed by opening this cell.
+        for neighborRow, neighborCol in getNeighbors(ship, row, col):
 
+            if ship[neighborRow][neighborCol] == False:
+
+                # If the blocked cell now has exactly one open neighbor,
+                # it is a candidate.
+                if countOpenNeighbors(ship, neighborRow, neighborCol) == 1:
+                    candidates.add((neighborRow, neighborCol))
+
+                # If it now has more than one open neighbor, it is no longer
+                # a valid candidate.
+                else:
+                    candidates.discard((neighborRow, neighborCol))
+
+    # Find all dead ends.
+    deadEnds = set()
+
+    #former implementation of checking every neighbour
+    #now is just used for the dead end check.
     for row in range(dimension):
         for col in range(dimension):
             if ship[row][col]:
-                #While previously this helped us discover cells with only one neighbour, now it helps us discover dead ends
-                #Because dead ends are defined as cells with only one open neighbour, this is the same check as before.
                 if countOpenNeighbors(ship, row, col) == 1:
-                    deadEnds.append((row, col))
+                    deadEnds.add((row, col))
 
     # Set target number of dead ends at beginning to half the current number of dead ends.
     # Loop until target is met
@@ -70,38 +93,65 @@ def generateShip(dimension):
     while len(deadEnds) > targetDeadEnds:
 
         # Pick a random dead end.
-        row, col = random.choice(deadEnds)
+        # Originally  was a list. 
+        #turned into set for same reason as candidates
+        #tupling for the same reason
+        row, col = random.choice(tuple(deadEnds))
 
-        #Check each of the four neighbours and see if they are blocked. If they are, add them to the list of blocked neighbours.
+        #create list of blocked neighbors of the dead end
         blockedNeighbors = []
-        #Up
-        if row > 0 and ship[row - 1][col] == False:
-            blockedNeighbors.append((row - 1, col))
-        #Down
-        if row < dimension - 1 and ship[row + 1][col] == False:
-            blockedNeighbors.append((row + 1, col))
-        #Left
-        if col > 0 and ship[row][col - 1] == False:
-            blockedNeighbors.append((row, col - 1))
-        #Right
-        if col < dimension - 1 and ship[row][col + 1] == False:
-            blockedNeighbors.append((row, col + 1))
+
+        #extract the blocked neighbors of the dead end
+        for neighborRow, neighborCol in getNeighbors(ship, row, col):
+            if ship[neighborRow][neighborCol] == False:
+                blockedNeighbors.append((neighborRow, neighborCol))
 
         # Pick one blocked neighbor and open it.
         newRow, newCol = random.choice(blockedNeighbors)
         ship[newRow][newCol] = True
 
         # Recalculate the current dead ends.
-        deadEnds = []
+        affectedCells = {(newRow, newCol)}
 
-        for row in range(dimension):
-            for col in range(dimension):
-                if ship[row][col]:
-                    if countOpenNeighbors(ship, row, col) == 1:
-                        deadEnds.append((row, col))
+        for neighborRow, neighborCol in getNeighbors(ship, newRow, newCol):
+            if ship[neighborRow][neighborCol]:
+                affectedCells.add((neighborRow, neighborCol))
+
+        for affectedRow, affectedCol in affectedCells:
+
+            if countOpenNeighbors(ship, affectedRow, affectedCol) == 1:
+                deadEnds.add((affectedRow, affectedCol))
+            else:
+                deadEnds.discard((affectedRow, affectedCol))
 
     return ship
 
+
+# Returns the orthogonal neighbors of a cell that are inside the ship.
+def getNeighbors(ship, row, col):
+
+    neighbors = []
+    dimension = len(ship)
+
+    # Up
+    if row > 0:
+        neighbors.append((row - 1, col))
+
+    # Down
+    if row < dimension - 1:
+        neighbors.append((row + 1, col))
+
+    # Left
+    if col > 0:
+        neighbors.append((row, col - 1))
+
+    # Right
+    if col < dimension - 1:
+        neighbors.append((row, col + 1))
+
+    return neighbors
+
+# Returns the number of open neighbors of a cell.
 def countOpenNeighbors(ship, row, col):
     count = 0
     dimension = len(ship)
